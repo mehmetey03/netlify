@@ -1,91 +1,76 @@
 const fetch = require('node-fetch');
 
-exports.handler = async function(event) {
+exports.handler = async function (event) {
   const id = event.queryStringParameters?.id;
   if (!id) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: 'ID parametresi gerekli.' })
+      body: JSON.stringify({ error: 'ID parametresi gerekli.' }),
     };
   }
 
   const targetUrl = `https://macizlevip315.shop/wp-content/themes/ikisifirbirdokuz/match-center.php?id=${id}`;
 
   try {
-    // Ana sayfayı çek
     const response = await fetch(targetUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/115.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
         'Referer': 'https://macizlevip315.shop/',
         'Origin': 'https://macizlevip315.shop',
         'Host': 'macizlevip315.shop',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
       },
-      redirect: 'follow',
-      timeout: 10000
+      timeout: 10000,
     });
 
     const html = await response.text();
 
-    // İlk iframe'yi tespit et
-    const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
-    let iframeHtml = '';
-    if (iframeMatch && iframeMatch[1]) {
-      let iframeUrl = iframeMatch[1];
+    // script içeriğindeki potansiyel m3u8 linklerini veya fetch URL'lerini bul
+    const scriptUrls = [];
+    const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+    let scriptMatch;
 
-      // Göreli linkse absolute yap
-      if (!iframeUrl.startsWith('http')) {
-        iframeUrl = `https://macizlevip315.shop${iframeUrl.startsWith('/') ? '' : '/'}${iframeUrl}`;
+    while ((scriptMatch = scriptRegex.exec(html)) !== null) {
+      const scriptContent = scriptMatch[1];
+
+      // fetch(...) çağrılarını bul
+      const fetchRegex = /fetch\s*\(\s*["']([^"']+)["']/gi;
+      let fetchMatch;
+      while ((fetchMatch = fetchRegex.exec(scriptContent)) !== null) {
+        scriptUrls.push(fetchMatch[1]);
       }
 
-      const iframeRes = await fetch(iframeUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Referer': targetUrl,
-          'Origin': 'https://macizlevip315.shop'
-        },
-        timeout: 10000
-      });
-
-      iframeHtml = await iframeRes.text();
-    }
-
-    // Ana sayfa + iframe HTML birleştir
-    const combinedHtml = html + '\n' + iframeHtml;
-
-    // M3U8 linklerini ara
-    const regex = /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/gi;
-    let matches = [];
-    let match;
-    while ((match = regex.exec(combinedHtml)) !== null) {
-      if (!matches.includes(match[1])) {
-        matches.push(match[1]);
+      // player.load(...) veya source: ... içeren m3u8 linklerini bul
+      const m3u8Regex = /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/gi;
+      let m3u8Match;
+      while ((m3u8Match = m3u8Regex.exec(scriptContent)) !== null) {
+        scriptUrls.push(m3u8Match[1]);
       }
     }
 
-    if (matches.length === 0) {
+    // En az bir .m3u8 içeriyorsa onu döndür
+    const finalM3U8 = scriptUrls.find((u) => u.includes('.m3u8'));
+    if (finalM3U8) {
       return {
-        statusCode: 404,
-        body: JSON.stringify({ error: 'M3U8 linki bulunamadı (iframe dahil)' })
+        statusCode: 200,
+        body: JSON.stringify({ url: finalM3U8, id }),
       };
     }
 
-    // Dilersen linke HEAD isteği atıp canlı mı diye test edebilirsin
-
+    // Eğer fetch ile başka endpoint çıkarsa onu analiz etmek gerek
     return {
-      statusCode: 200,
-      body: JSON.stringify({ url: matches[0], id: id })
+      statusCode: 404,
+      body: JSON.stringify({
+        error: 'M3U8 linki bulunamadı (script tarandı)',
+        debugUrls: scriptUrls,
+      }),
     };
 
-  } catch (error) {
+  } catch (err) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'İşlem hatası', message: error.message })
+      body: JSON.stringify({ error: 'İşlem hatası', message: err.message }),
     };
   }
 };
