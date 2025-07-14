@@ -1,147 +1,72 @@
+const chromium = require('chrome-aws-lambda');
 const fetch = require('node-fetch');
-const cheerio = require('cheerio');
 
-exports.handler = async (event) => {
+exports.handler = async function(event) {
+  const id = event.queryStringParameters?.id;
+  if (!id || !/^\d+$/.test(id)) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Geçersiz ID' }),
+    };
+  }
+
+  const targetUrl = `https://macizlevip315.shop/wp-content/themes/ikisifirbirdokuz/match-center.php?id=${id}`;
+
+  let browser = null;
+
   try {
-    const { id } = event.queryStringParameters || {};
-    if (!id || !/^\d+$/.test(id)) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ 
-          error: 'Geçersiz ID',
-          message: 'Lütfen sayısal bir ID girin (örn: ?id=5062)'
-        })
-      };
-    }
-
-    const targetUrl = `https://macizlevip315.shop/wp-content/themes/ikisifirbirdokuz/match-center.php?id=${id}`;
-    const response = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Referer': 'https://macizlevip315.shop/'
-      },
-      timeout: 10000
+    browser = await chromium.puppeteer.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath,
+      headless: chromium.headless,
     });
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
-    const html = await response.text();
-
-    const cfWorkerPatterns = [
-      /https?:\/\/[a-z0-9.-]+\.workers\.dev\/[a-f0-9]+\/-\/\d+\/playlist\.m3u8\?verify=[a-f0-9~%]+/i,
-      /https?:\/\/[a-z0-9.-]+\.workers\.dev\/[a-f0-9]+\/\d+\/[^"'\s]+\.m3u8/i,
-      /"([a-zA-Z0-9+/=]{20,}\.m3u8)"/i  // minimum uzunluklu base64 bulmaya çalış
-    ];
-
-    for (const pattern of cfWorkerPatterns) {
-      const matches = html.match(pattern);
-      if (matches && matches[0]) {
-        let foundUrl = matches[0];
-
-        if (pattern === cfWorkerPatterns[2]) {
-          try {
-            const decoded = Buffer.from(matches[1], 'base64').toString('utf-8');
-            // decode sonrası mutlaka .m3u8 içermeli
-            if (decoded && decoded.includes('.m3u8')) {
-              foundUrl = decoded;
-            } else {
-              continue;
-            }
-          } catch {
-            continue;
-          }
-        }
-
-        return {
-          statusCode: 200,
-          body: JSON.stringify({
-            url: `/.netlify/functions/proxy?url=${encodeURIComponent(foundUrl)}`,
-            originalUrl: foundUrl,
-            id: id,
-            detectedBy: 'direct-pattern-match'
-          })
-        };
+    let m3u8Url = null;
+    page.on('response', response => {
+      const url = response.url();
+      if (url.includes('.m3u8') && !m3u8Url) {
+        m3u8Url = url;
       }
+    });
+
+    // sayfanın tam yüklenmesini bekle
+    await page.waitForTimeout(3000);
+
+    // Eğer response event'inde yakalanamadıysa, içerikte arayalım
+    if (!m3u8Url) {
+      const content = await page.content();
+      const found = content.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/i);
+      if (found) m3u8Url = found[0];
     }
 
-    const $ = cheerio.load(html);
-
-    const iframeSrc = $('iframe[src*="workers.dev"], iframe[src*=".m3u8"]').attr('src');
-    if (iframeSrc && iframeSrc.includes('.m3u8')) {
+    if (!m3u8Url) {
       return {
-        statusCode: 200,
-        body: JSON.stringify({
-          url: `/.netlify/functions/proxy?url=${encodeURIComponent(iframeSrc)}`,
-          originalUrl: iframeSrc,
-          id: id,
-          detectedBy: 'iframe-src'
-        })
+        statusCode: 404,
+        body: JSON.stringify({ error: 'M3U8 bulunamadı' }),
       };
     }
 
-    const scripts = $('script:not([src])').toArray();
-    for (const script of scripts) {
-      const content = $(script).html() || '';
-
-      const jsonMatch = content.match(/"stream_url":"(https?:\/\/[^"]+\.m3u8)"/i);
-      if (jsonMatch) {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({
-            url: `/.netlify/functions/proxy?url=${encodeURIComponent(jsonMatch[1])}`,
-            originalUrl: jsonMatch[1],
-            id: id,
-            detectedBy: 'script-json'
-          })
-        };
-      }
-
-      const rawMatch = content.match(/(https?:\/\/[^\s"']+\.workers\.dev[^\s"']*\.m3u8[^\s"']*)/i);
-      if (rawMatch) {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({
-            url: `/.netlify/functions/proxy?url=${encodeURIComponent(rawMatch[0])}`,
-            originalUrl: rawMatch[0],
-            id: id,
-            detectedBy: 'script-raw'
-          })
-        };
-      }
-    }
-
-    const dataElems = $('[data-url],[data-src]').toArray();
-    for (const elem of dataElems) {
-      const url = $(elem).attr('data-url') || $(elem).attr('data-src');
-      if (url && url.includes('workers.dev') && url.includes('.m3u8')) {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({
-            url: `/.netlify/functions/proxy?url=${encodeURIComponent(url)}`,
-            originalUrl: url,
-            id: id,
-            detectedBy: 'data-attribute'
-          })
-        };
-      }
-    }
+    // Proxy URL'si (aynı fonksiyon içinde proxy yapılacaksa)
+    const proxiedUrl = `/.netlify/functions/proxy?url=${encodeURIComponent(m3u8Url)}`;
 
     return {
-      statusCode: 404,
+      statusCode: 200,
       body: JSON.stringify({
-        error: 'M3U8 bulunamadı',
-        suggestions: [
-          'Site yapısı değişmiş olabilir',
-          'Farklı bir ID deneyin (5062 yerine 5061 gibi)',
-          'HTML çıktısını inceleyin'
-        ]
-      })
+        url: proxiedUrl,
+        originalUrl: m3u8Url,
+        id: id,
+      }),
     };
-
-  } catch (error) {
+  } catch (err) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'İşlem hatası', message: error.message })
+      body: JSON.stringify({ error: 'İşlem hatası', message: err.message }),
     };
+  } finally {
+    if (browser) await browser.close();
   }
 };
