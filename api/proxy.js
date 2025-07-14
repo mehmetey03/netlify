@@ -29,7 +29,6 @@ exports.handler = async function(event) {
     if (contentType.includes('mpegurl') || targetUrl.includes('.m3u8')) {
       let body = await response.text();
 
-      // .m3u8 içindeki .ts segmentlerini proxy ile değiştir
       body = body
         .split('\n')
         .map((line) => {
@@ -47,7 +46,6 @@ exports.handler = async function(event) {
       };
     }
 
-    // Diğer içerikleri base64 encode edip gönder
     const buffer = await response.buffer();
     return {
       statusCode: 200,
