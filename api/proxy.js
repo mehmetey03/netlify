@@ -11,9 +11,7 @@ exports.handler = async (event) => {
 
   try {
     const response = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0',
-      },
+      headers: { 'User-Agent': 'Mozilla/5.0' },
     });
 
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
