@@ -30,24 +30,31 @@ exports.handler = async (event) => {
     const cfWorkerPatterns = [
       /https?:\/\/[a-z0-9.-]+\.workers\.dev\/[a-f0-9]+\/-\/\d+\/playlist\.m3u8\?verify=[a-f0-9~%]+/i,
       /https?:\/\/[a-z0-9.-]+\.workers\.dev\/[a-f0-9]+\/\d+\/[^"'\s]+\.m3u8/i,
-      /"([a-zA-Z0-9+/=]+\.m3u8)"/i
+      /"([a-zA-Z0-9+/=]{20,}\.m3u8)"/i  // minimum uzunluklu base64 bulmaya çalış
     ];
 
     for (const pattern of cfWorkerPatterns) {
       const matches = html.match(pattern);
       if (matches && matches[0]) {
         let foundUrl = matches[0];
+
         if (pattern === cfWorkerPatterns[2]) {
           try {
-            foundUrl = Buffer.from(matches[1], 'base64').toString('utf-8');
-          } catch (e) {
+            const decoded = Buffer.from(matches[1], 'base64').toString('utf-8');
+            // decode sonrası mutlaka .m3u8 içermeli
+            if (decoded && decoded.includes('.m3u8')) {
+              foundUrl = decoded;
+            } else {
+              continue;
+            }
+          } catch {
             continue;
           }
         }
 
         return {
           statusCode: 200,
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             url: `/.netlify/functions/proxy?url=${encodeURIComponent(foundUrl)}`,
             originalUrl: foundUrl,
             id: id,
@@ -58,11 +65,12 @@ exports.handler = async (event) => {
     }
 
     const $ = cheerio.load(html);
-    const iframeSrc = $('iframe[src*="workers.dev"], iframe[src*="m3u8"]').attr('src');
+
+    const iframeSrc = $('iframe[src*="workers.dev"], iframe[src*=".m3u8"]').attr('src');
     if (iframeSrc && iframeSrc.includes('.m3u8')) {
       return {
         statusCode: 200,
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           url: `/.netlify/functions/proxy?url=${encodeURIComponent(iframeSrc)}`,
           originalUrl: iframeSrc,
           id: id,
@@ -74,11 +82,12 @@ exports.handler = async (event) => {
     const scripts = $('script:not([src])').toArray();
     for (const script of scripts) {
       const content = $(script).html() || '';
+
       const jsonMatch = content.match(/"stream_url":"(https?:\/\/[^"]+\.m3u8)"/i);
       if (jsonMatch) {
         return {
           statusCode: 200,
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             url: `/.netlify/functions/proxy?url=${encodeURIComponent(jsonMatch[1])}`,
             originalUrl: jsonMatch[1],
             id: id,
@@ -86,12 +95,12 @@ exports.handler = async (event) => {
           })
         };
       }
-      
+
       const rawMatch = content.match(/(https?:\/\/[^\s"']+\.workers\.dev[^\s"']*\.m3u8[^\s"']*)/i);
       if (rawMatch) {
         return {
           statusCode: 200,
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             url: `/.netlify/functions/proxy?url=${encodeURIComponent(rawMatch[0])}`,
             originalUrl: rawMatch[0],
             id: id,
@@ -107,7 +116,7 @@ exports.handler = async (event) => {
       if (url && url.includes('workers.dev') && url.includes('.m3u8')) {
         return {
           statusCode: 200,
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             url: `/.netlify/functions/proxy?url=${encodeURIComponent(url)}`,
             originalUrl: url,
             id: id,
@@ -119,7 +128,7 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 404,
-      body: JSON.stringify({ 
+      body: JSON.stringify({
         error: 'M3U8 bulunamadı',
         suggestions: [
           'Site yapısı değişmiş olabilir',
