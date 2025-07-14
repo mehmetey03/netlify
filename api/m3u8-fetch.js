@@ -1,87 +1,60 @@
-const fetch = require('node-fetch');
+const puppeteer = require('puppeteer');
 
-exports.handler = async function (event) {
+exports.handler = async function(event) {
   const id = event.queryStringParameters?.id;
   if (!id) {
     return {
       statusCode: 400,
-      body: JSON.stringify({ error: 'ID parametresi gerekli.' }),
+      body: JSON.stringify({ error: 'ID parametresi gerekli.' })
     };
   }
 
   const targetUrl = `https://macizlevip315.shop/wp-content/themes/ikisifirbirdokuz/match-center.php?id=${id}`;
 
   try {
-    const response = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/115.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Referer': 'https://macizlevip315.shop/',
-        'Origin': 'https://macizlevip315.shop',
-      },
-      timeout: 10000,
+    const browser = await puppeteer.launch({
+      headless: 'new',  // modern headless
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
-    const html = await response.text();
+    const page = await browser.newPage();
 
-    // iframe içeriğini al
-    const iframeRegex = /<iframe[^>]+src=["']([^"']+)["']/i;
-    const iframeMatch = html.match(iframeRegex);
-    let iframeHtml = '';
-    if (iframeMatch && iframeMatch[1]) {
-      const iframeUrl = iframeMatch[1].startsWith('http')
-        ? iframeMatch[1]
-        : `https://macizlevip315.shop/${iframeMatch[1]}`;
-      const iframeRes = await fetch(iframeUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Referer': targetUrl
-        },
-        timeout: 10000
-      });
-      iframeHtml = await iframeRes.text();
-    }
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/115 Safari/537.36');
 
-    const combined = html + '\n' + iframeHtml;
+    // m3u8 linklerini XHR'dan yakalamak için dinleyici
+    let m3u8Links = [];
+    page.on('request', req => {
+      const url = req.url();
+      if (url.includes('.m3u8')) {
+        m3u8Links.push(url);
+      }
+    });
 
-    // 1. JSON içinde geçen linkleri tara
-    const jsonRegex = /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/gi;
-    const jsonMatches = [...combined.matchAll(jsonRegex)].map(m => m[1]);
+    await page.goto(targetUrl, {
+      waitUntil: 'networkidle2',
+      timeout: 20000
+    });
 
-    // 2. Veri attribute'larında gizlenmiş linkleri ara (örneğin: data-stream="...m3u8")
-    const dataAttrRegex = /data-[a-zA-Z0-9-]+=["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/gi;
-    const dataMatches = [...combined.matchAll(dataAttrRegex)].map(m => m[1]);
+    await page.waitForTimeout(5000); // biraz bekle, XHR'lar tam yüklensin
 
-    // 3. Herhangi bir JS fonksiyonu içinde .m3u8 geçen linkleri tara
-    const looseRegex = /(https?:\/\/[^"'<> ]+\.m3u8[^"'<> ]*)/gi;
-    const looseMatches = [...combined.matchAll(looseRegex)].map(m => m[1]);
+    await browser.close();
 
-    // Tek bir liste oluştur
-    const allMatches = Array.from(new Set([...jsonMatches, ...dataMatches, ...looseMatches]));
-
-    if (allMatches.length === 0) {
+    if (m3u8Links.length > 0) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ url: m3u8Links[0], id })
+      };
+    } else {
       return {
         statusCode: 404,
-        body: JSON.stringify({
-          error: 'M3U8 linki hâlâ bulunamadı (JSON/data/script loose tarandı)',
-          debug: {
-            jsonMatches,
-            dataMatches,
-            looseMatches
-          }
-        })
+        body: JSON.stringify({ error: 'm3u8 linki puppeteer ile de bulunamadı.' })
       };
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ url: allMatches[0], id })
-    };
-
-  } catch (err) {
+  } catch (error) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'İşlem hatası', message: err.message }),
+      body: JSON.stringify({ error: 'Puppeteer hatası', message: error.message })
     };
   }
 };
