@@ -12,68 +12,70 @@ exports.handler = async function(event) {
   const targetUrl = `https://macizlevip315.shop/wp-content/themes/ikisifirbirdokuz/match-center.php?id=${id}`;
 
   try {
+    // Ana sayfayı çek
     const response = await fetch(targetUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
         'Referer': 'https://macizlevip315.shop/',
+        'Origin': 'https://macizlevip315.shop',
+        'Host': 'macizlevip315.shop',
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1'
       },
+      redirect: 'follow',
       timeout: 10000
     });
 
-    if (!response.ok) {
-      return {
-        statusCode: response.status,
-        body: JSON.stringify({ error: `Sayfa yüklenemedi: HTTP ${response.status}` })
-      };
-    }
-
     const html = await response.text();
 
-    // iframe varsa onu yakala
-    const iframeRegex = /<iframe[^>]+src=["']([^"']+)["']/i;
-    const iframeMatch = html.match(iframeRegex);
-
+    // İlk iframe'yi tespit et
+    const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
     let iframeHtml = '';
     if (iframeMatch && iframeMatch[1]) {
-      const iframeUrl = iframeMatch[1].startsWith('http')
-        ? iframeMatch[1]
-        : `https://macizlevip315.shop/${iframeMatch[1]}`;
+      let iframeUrl = iframeMatch[1];
 
-      const iframeResponse = await fetch(iframeUrl, {
+      // Göreli linkse absolute yap
+      if (!iframeUrl.startsWith('http')) {
+        iframeUrl = `https://macizlevip315.shop${iframeUrl.startsWith('/') ? '' : '/'}${iframeUrl}`;
+      }
+
+      const iframeRes = await fetch(iframeUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0',
-          'Referer': targetUrl
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Referer': targetUrl,
+          'Origin': 'https://macizlevip315.shop'
         },
         timeout: 10000
       });
 
-      iframeHtml = await iframeResponse.text();
+      iframeHtml = await iframeRes.text();
     }
 
-    // Ana sayfa + iframe içeriği birlikte aranacak
+    // Ana sayfa + iframe HTML birleştir
     const combinedHtml = html + '\n' + iframeHtml;
 
-    // Geniş kapsamlı m3u8 regex
-    const regex = /(["'])(https?:\/\/[^"']+\.m3u8[^"']*)\1/gi;
+    // M3U8 linklerini ara
+    const regex = /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/gi;
     let matches = [];
     let match;
-
     while ((match = regex.exec(combinedHtml)) !== null) {
-      matches.push(match[2]);
+      if (!matches.includes(match[1])) {
+        matches.push(match[1]);
+      }
     }
 
     if (matches.length === 0) {
       return {
         statusCode: 404,
-        body: JSON.stringify({ error: 'M3U8 linki bulunamadı' })
+        body: JSON.stringify({ error: 'M3U8 linki bulunamadı (iframe dahil)' })
       };
     }
+
+    // Dilersen linke HEAD isteği atıp canlı mı diye test edebilirsin
 
     return {
       statusCode: 200,
