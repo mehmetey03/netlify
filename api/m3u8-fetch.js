@@ -1,5 +1,4 @@
 const chromium = require('chrome-aws-lambda');
-const fetch = require('node-fetch');
 
 exports.handler = async function(event) {
   const id = event.queryStringParameters?.id;
@@ -17,26 +16,34 @@ exports.handler = async function(event) {
   try {
     browser = await chromium.puppeteer.launch({
       args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath,
       headless: chromium.headless,
     });
 
     const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    );
+
+    // Puppeteer sayfayı açıyor
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
     let m3u8Url = null;
-    page.on('response', response => {
+
+    // Response event'lerinden .m3u8 URL'si yakalama
+    page.on('response', (response) => {
       const url = response.url();
       if (url.includes('.m3u8') && !m3u8Url) {
         m3u8Url = url;
       }
     });
 
-    // sayfanın tam yüklenmesini bekle
+    // Birkaç saniye bekle (sayfa tam yüklensin)
     await page.waitForTimeout(3000);
 
-    // Eğer response event'inde yakalanamadıysa, içerikte arayalım
+    // Eğer event ile bulunmadıysa içerik içinde ara
     if (!m3u8Url) {
       const content = await page.content();
       const found = content.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/i);
@@ -50,7 +57,6 @@ exports.handler = async function(event) {
       };
     }
 
-    // Proxy URL'si (aynı fonksiyon içinde proxy yapılacaksa)
     const proxiedUrl = `/.netlify/functions/proxy?url=${encodeURIComponent(m3u8Url)}`;
 
     return {
@@ -58,13 +64,13 @@ exports.handler = async function(event) {
       body: JSON.stringify({
         url: proxiedUrl,
         originalUrl: m3u8Url,
-        id: id,
+        id,
       }),
     };
-  } catch (err) {
+  } catch (error) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'İşlem hatası', message: err.message }),
+      body: JSON.stringify({ error: 'İşlem hatası', message: error.message }),
     };
   } finally {
     if (browser) await browser.close();
