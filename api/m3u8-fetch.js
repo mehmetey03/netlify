@@ -27,12 +27,10 @@ exports.handler = async function(event) {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     );
 
-    // Puppeteer sayfayı açıyor
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
 
     let m3u8Url = null;
 
-    // Response event'lerinden .m3u8 URL'si yakalama
     page.on('response', (response) => {
       const url = response.url();
       if (url.includes('.m3u8') && !m3u8Url) {
@@ -40,10 +38,8 @@ exports.handler = async function(event) {
       }
     });
 
-    // Birkaç saniye bekle (sayfa tam yüklensin)
     await page.waitForTimeout(3000);
 
-    // Eğer event ile bulunmadıysa içerik içinde ara
     if (!m3u8Url) {
       const content = await page.content();
       const found = content.match(/https?:\/\/[^\s"']+\.m3u8[^\s"']*/i);
