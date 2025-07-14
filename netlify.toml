@@ -1,6 +1,10 @@
 [build]
-  functions = "api"
+  command = "npm install"
   publish = "public"
+  functions = "api"
+
+[build.environment]
+  NODE_VERSION = "18"
 
 [[redirects]]
   from = "/proxy"
