@@ -23,14 +23,17 @@ exports.handler = async (event) => {
     const $ = cheerio.load(html);
     const links = new Set();
 
+    // Tüm sayfadaki m3u8 linklerini ara
     const globalMatches = html.match(/https?:\/\/[^\s"'<>]+\.m3u8[^\s"'<>]*/gi);
     if (globalMatches) globalMatches.forEach(link => links.add(link));
 
+    // iframe, video, source, a etiketlerinden m3u8 linkleri
     $('iframe[src], video[src], source[src], a[href]').each((_, el) => {
       const url = $(el).attr('src') || $(el).attr('href');
       if (url?.includes('.m3u8')) links.add(url);
     });
 
+    // data-url veya data-src attribute'larında m3u8 linkleri
     $('[data-url], [data-src]').each((_, el) => {
       const url = $(el).attr('data-url') || $(el).attr('data-src');
       if (url?.includes('.m3u8')) links.add(url);
@@ -43,6 +46,7 @@ exports.handler = async (event) => {
       };
     }
 
+    // İlk bulduğunu dön
     const found = [...links][0];
     return {
       statusCode: 200,
