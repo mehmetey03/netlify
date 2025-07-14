@@ -1,4 +1,9 @@
 {
+  "name": "m3u8-fetcher",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "chrome-aws-lambda": "^10.1.0",
     "puppeteer-core": "^19.10.0",
