@@ -2,5 +2,14 @@
   functions = "api"
   publish = "public"
 
-[functions]
-  node_bundler = "esbuild"
+[[redirects]]
+  from = "/proxy"
+  to = "/.netlify/functions/proxy"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/m3u8-fetch"
+  to = "/.netlify/functions/m3u8-fetch"
+  status = 200
+  force = true
