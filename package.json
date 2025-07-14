@@ -1,8 +1,7 @@
 {
-  "name": "m3u8-fetcher",
-  "version": "1.0.0",
   "dependencies": {
-    "cheerio": "^1.0.0-rc.12",
-    "node-fetch": "^2.6.7"
+    "chrome-aws-lambda": "^10.1.0",
+    "puppeteer-core": "^19.10.0",
+    "node-fetch": "^3.3.1"
   }
 }
