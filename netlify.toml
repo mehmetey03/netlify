@@ -2,9 +2,6 @@
   functions = "api"
   publish = "public"
 
-[build.environment]
-  NODE_VERSION = "18"
-
 [[redirects]]
   from = "/proxy"
   to = "/.netlify/functions/proxy"
