@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>M3U8 Player</title>
+</head>
+<body>
+  <h1>M3U8 Yayını Aç</h1>
+  <form id="form">
+    <label>ID girin: <input type="number" id="id" required></label>
+    <button type="submit">Yükle</button>
+  </form>
+
+  <video id="player" width="640" height="360" controls></video>
+
+  <script>
+    document.getElementById('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const id = document.getElementById('id').value;
+      const res = await fetch(`/.netlify/functions/m3u8-fetch?id=${id}`);
+      const data = await res.json();
+
+      if (data.url) {
+        const video = document.getElementById('player');
+        video.src = data.url;
+        video.play();
+      } else {
+        alert("M3U8 bulunamadı.");
+      }
+    });
+  </script>
+</body>
+</html>
